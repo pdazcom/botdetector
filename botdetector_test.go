@@ -86,6 +86,7 @@ func TestRedirect(t *testing.T) {
 		{"https://localhost", "https://example.com", "example.com", true, http.StatusMovedPermanently},
 		{"http://localhost", "", "localhost", false, 0}, // no redirect
 		{"http://localhost/some/path", "http://example.com/some/path", "example.com", false, http.StatusFound},
+		{"http://localhost/some/path?some-query=foo#hashtag", "http://example.com/some/path?some-query=foo#hashtag", "example.com", false, http.StatusFound},
 	}
 
 	for _, test := range tests {

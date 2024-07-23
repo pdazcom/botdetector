@@ -123,9 +123,22 @@ func (m *BotMiddleware) redirect(rw http.ResponseWriter, req *http.Request, targ
 		return
 	}
 
-	// Extract the scheme and path from the original URL
+    // Extract the scheme and path from the original URL
+	scheme := "https"
+	if req.TLS == nil {
+        scheme = "http"
+    }
+
     originalURL := req.URL
-    newURL := originalURL.Scheme + "://" + target + originalURL.Path
+    newURL := scheme + "://" + target + originalURL.Path
+
+    if originalURL.RawQuery != "" {
+        newURL += "?" + originalURL.RawQuery
+    }
+
+    if originalURL.Fragment != "" {
+        newURL += "#" + originalURL.Fragment
+    }
 
 	statusCode := http.StatusFound
 	if m.permanent {
