@@ -11,8 +11,8 @@ And then redirects/allows bots to one domain, and the rest to another.
 experimental:
   plugins:
     botdetector:
-      modulename = "github.com/pdazcom/search-bots-detector"
-      version = "v0.0.1"
+      modulename = "github.com/pdazcom/botdetector"
+      version = "v0.0.3"
 
 entryPoints:
   http:
