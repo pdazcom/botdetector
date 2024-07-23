@@ -1,0 +1,14 @@
+displayName: SearchBot detector
+type: middleware
+
+import: github.com/pdazcom/search-bot-detector
+
+summary: 'SearchBot detector is a middleware plugin which detect search engines bots and verify it by rDNS.'
+
+testData:
+  botsTo: 'bots.example.com'
+  othersTo: 'others.example.com'
+  botsList:
+    - Google
+    - Yandex
+  permanent: false
