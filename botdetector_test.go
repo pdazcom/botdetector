@@ -76,21 +76,24 @@ func TestVerifyBot(t *testing.T) {
 
 func TestRedirect(t *testing.T) {
 	tests := []struct {
-		target    string
-		permanent bool
-		expected  int
+	    source     string
+	    target     string
+		redirectTo string
+		permanent  bool
+		expected   int
 	}{
-		{"http://example.com", false, http.StatusFound},
-		{"http://example.com", true, http.StatusMovedPermanently},
-		{"", false, 0}, // no redirect
+		{"http://localhost", "http://example.com", "example.com", false, http.StatusFound},
+		{"https://localhost", "https://example.com", "example.com", true, http.StatusMovedPermanently},
+		{"http://localhost", "", "localhost", false, 0}, // no redirect
+		{"http://localhost/some/path", "http://example.com/some/path", "example.com", false, http.StatusFound},
 	}
 
 	for _, test := range tests {
 		recorder := httptest.NewRecorder()
-		req := httptest.NewRequest("GET", "http://localhost", nil)
+		req := httptest.NewRequest("GET", test.source, nil)
 		middleware := &BotMiddleware{permanent: test.permanent}
 
-		middleware.redirect(recorder, req, test.target)
+		middleware.redirect(recorder, req, test.redirectTo)
 
 		if test.expected != 0 {
 			if status := recorder.Result().StatusCode; status != test.expected {
@@ -126,8 +129,8 @@ func TestServeHTTP(t *testing.T) {
 		req.RemoteAddr = test.ip + ":12345"
 
 		middleware := &BotMiddleware{
-			botsTo:      "http://bots.com",
-			othersTo:    "http://others.com",
+			botsTo:      "bots.com",
+			othersTo:    "others.com",
 			dnsResolver: &MockDNSResolver{},
 		}
 

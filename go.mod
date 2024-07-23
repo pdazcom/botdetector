@@ -1,3 +1,3 @@
-module github.com/pdazcom/search-bot-detector
+module github.com/pdazcom/botdetector
 
 go 1.22.5

@@ -123,12 +123,16 @@ func (m *BotMiddleware) redirect(rw http.ResponseWriter, req *http.Request, targ
 		return
 	}
 
+	// Extract the scheme and path from the original URL
+    originalURL := req.URL
+    newURL := originalURL.Scheme + "://" + target + originalURL.Path
+
 	statusCode := http.StatusFound
 	if m.permanent {
 		statusCode = http.StatusMovedPermanently
 	}
 
-	http.Redirect(rw, req, target, statusCode)
+	http.Redirect(rw, req, newURL, statusCode)
 }
 
 func getIP(req *http.Request) string {
