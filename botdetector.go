@@ -95,7 +95,7 @@ func (m *BotMiddleware) verifyBot(ip string, userAgent string) bool {
 		return false
 	}
 
-	botDomainPattern, _ := regexp.Compile(`(\.|^)(yandex\.(ru|net|com)|google(usercontent|bot)?\.com)$`)
+	botDomainPattern, _ := regexp.Compile(`(\.|^)(yandex\.(ru|net|com)|google(usercontent|bot)?\.com)\.$`)
 
 	for _, hostname := range hostnames {
 		match := botDomainPattern.MatchString(hostname)

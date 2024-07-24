@@ -12,7 +12,7 @@ experimental:
   plugins:
     botdetector:
       modulename = "github.com/pdazcom/botdetector"
-      version = "v0.0.3"
+      version = "v0.0.4"
 
 entryPoints:
   http:
