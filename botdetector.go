@@ -30,10 +30,13 @@ type Config struct {
 	OthersTo  string   `json:"othersTo,omitempty"`
 	BotsList  []string `json:"botsList,omitempty"`
 	Permanent bool     `json:"permanent,omitempty"`
+	BotTag    string   `json:"botTag,omitempty"`
 }
 
 func CreateConfig() *Config {
-	return &Config{}
+	return &Config{
+	    BotTag: "true",
+	}
 }
 
 type BotMiddleware struct {
@@ -42,6 +45,7 @@ type BotMiddleware struct {
 	othersTo    string
 	botsList    []string
 	permanent   bool
+	botTag      string
 	dnsResolver DNSResolver
 }
 
@@ -52,16 +56,24 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		othersTo:    config.OthersTo,
 		botsList:    config.BotsList,
 		permanent:   config.Permanent,
+		botTag:      config.BotTag,
 		dnsResolver: &DefaultDNSResolver{},
 	}, nil
 }
 
 func (m *BotMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+
+    if req.Header.Get("X-SearchBot-Detected") == m.botTag {
+        m.redirect(rw, req, m.botsTo)
+        return
+    }
+
 	userAgent := req.Header.Get("User-Agent")
 
 	if m.isSearchBot(userAgent) {
 		ip := getIP(req)
 		if m.verifyBot(ip, userAgent) {
+		    req.Header.Set("X-SearchBot-Detected", m.botTag)
 			m.redirect(rw, req, m.botsTo)
 			return
 		}

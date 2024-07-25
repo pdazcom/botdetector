@@ -93,6 +93,7 @@ func TestRedirect(t *testing.T) {
 		{"http://localhost", "http://example.com", "example.com", false, http.StatusFound},
 		{"https://localhost", "https://example.com", "example.com", true, http.StatusMovedPermanently},
 		{"http://localhost", "", "localhost", false, 0}, // no redirect
+		{"http://localhost", "", "", false, 0}, // no redirect
 		{"http://localhost/some/path", "http://example.com/some/path", "example.com", false, http.StatusFound},
 		{"http://localhost/some/path?some-query=foo#hashtag", "http://example.com/some/path?some-query=foo#hashtag", "example.com", false, http.StatusFound},
 	}
@@ -121,32 +122,51 @@ func TestRedirect(t *testing.T) {
 
 func TestServeHTTP(t *testing.T) {
 	tests := []struct {
-		ip        string
-		userAgent string
-		expected  string
+		ip         string
+		userAgent  string
+		botTag     string
+		headerSet  bool
+		expected   string
+		statusCode int
 	}{
-		{"66.249.66.1", "Googlebot", "http://bots.com"},
-		{"77.88.55.66", "YandexBot/3.0; +http://yandex.com/bots", "http://bots.com"},
-		{"77.88.55.67", "YandexBot/3.1; +http://yandex.com/bots", "http://others.com"},
-		{"192.168.1.1", "Mozilla/5.0", "http://others.com"},
+		{"66.249.66.1", "Googlebot", "true", false, "http://bots.com", http.StatusFound},
+		{"77.88.55.66", "YandexBot/3.0; +http://yandex.com/bots", "true", false, "http://bots.com", http.StatusFound},
+		{"192.168.1.1", "Mozilla/5.0", "true", false, "http://others.com", http.StatusFound},
+		{"66.249.66.1", "Googlebot", "true", true, "http://bots.com", http.StatusFound},
+		{"66.249.66.2", "Gozilla/5.0", "true", true, "http://bots.com", http.StatusFound},
+		{"66.249.66.3", "Gozilla/5.1", "fdsdfsfd", true, "http://others.com", http.StatusFound},
+
 	}
 
 	for _, test := range tests {
 		recorder := httptest.NewRecorder()
 		req := httptest.NewRequest("GET", "http://localhost", nil)
+		req.Header.Set("X-Real-IP", test.ip)
 		req.Header.Set("User-Agent", test.userAgent)
-		req.RemoteAddr = test.ip + ":12345"
+		if test.headerSet {
+			req.Header.Set("X-SearchBot-Detected", test.botTag)
+		}
 
 		middleware := &BotMiddleware{
-			botsTo:      "bots.com",
-			othersTo:    "others.com",
-			dnsResolver: &MockDNSResolver{},
-		}
+            botsTo:     "bots.com",
+            othersTo:   "others.com",
+            botTag:     "true",
+            dnsResolver: &MockDNSResolver{},
+            next:       http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+        }
 
 		middleware.ServeHTTP(recorder, req)
 
 		if location := recorder.Header().Get("Location"); location != test.expected {
-			t.Errorf("ServeHTTP() redirect = %v; want %v", location, test.expected)
+			t.Errorf("ServeHTTP() location = %v; want %v", location, test.expected)
+		}
+		if status := recorder.Result().StatusCode; status != test.statusCode {
+			t.Errorf("ServeHTTP() status = %v; want %v", status, test.statusCode)
+		}
+		if test.headerSet {
+			if header := req.Header.Get("X-SearchBot-Detected"); header != test.botTag {
+				t.Errorf("ServeHTTP() header = %v; want %v", header, test.botTag)
+			}
 		}
 	}
 }
