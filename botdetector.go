@@ -157,7 +157,13 @@ func (m *BotMiddleware) redirect(rw http.ResponseWriter, req *http.Request, targ
 		statusCode = http.StatusMovedPermanently
 	}
 
-	http.Redirect(rw, req, newURL, statusCode)
+    // redirect action
+	rw.Header().Set("Location", newURL)
+    rw.WriteHeader(statusCode)
+    _, err := rw.Write([]byte(http.StatusText(statusCode)))
+    if err != nil {
+        http.Error(rw, err.Error(), http.StatusInternalServerError)
+    }
 }
 
 func getIP(req *http.Request) string {
