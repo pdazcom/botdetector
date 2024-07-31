@@ -20,6 +20,9 @@ func (r *MockDNSResolver) LookupAddr(ip string) ([]string, error) {
     if ip == "5.255.253.36" {
         return []string{"5-255-253-36.spider.yandex.com."}, nil
     }
+    if ip == "157.55.33.18" {
+        return []string{"msnbot-157-55-33-18.search.msn.com."}, nil
+    }
 	return nil, errors.New("unknown host")
 }
 
@@ -33,6 +36,10 @@ func (r *MockDNSResolver) LookupIP(hostname string) ([]net.IP, error) {
     if hostname == "5-255-253-36.spider.yandex.com." {
 		return []net.IP{net.ParseIP("5.255.253.36")}, nil
 	}
+    if hostname == "msnbot-157-55-33-18.search.msn.com." {
+		return []net.IP{net.ParseIP("157.55.33.18")}, nil
+	}
+
 	return nil, errors.New("unknown host")
 }
 
@@ -45,6 +52,7 @@ func TestIsSearchBot(t *testing.T) {
 		{"Mozilla/5.0", false},
 		{"YandexBot/3.0; +http://yandex.com/bots", true},
 		{"Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0", true},
+		{"Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm) Chrome/100.0.4896.127 Safari/537.36", true},
 	}
 
 	middleware := &BotMiddleware{}
@@ -68,6 +76,7 @@ func TestVerifyBot(t *testing.T) {
 		{"77.88.55.67", "YandexBot", false},
 		{"192.168.1.1", "Mozilla/5.0", false},
 		{"5.255.253.36", "Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0", true},
+		{"157.55.33.18", "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm) Chrome/100.0.4896.127 Safari/537.36", true},
 	}
 
 	middleware := &BotMiddleware{

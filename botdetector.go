@@ -86,6 +86,7 @@ func (m *BotMiddleware) isSearchBot(userAgent string) bool {
 	botPatterns := map[string]string{
 		"Google": `(Google-?(bot|Other|InspectionTool|Safety|Producer|Read-Aloud|Site-Verification)|(Storebot|APIs|AdsBot|Mediapartners|FeedFetcher)-Google)`,
 		"Yandex": `(Yandex|Ya)([a-zA-Z]*)(\/\d\.\d{1,2})?; (.*;\s)?\+http:\/\/yandex\.com\/bots`,
+		"Bing": `bingbot`,
 	}
 
 	for bot, pattern := range botPatterns {
@@ -107,7 +108,7 @@ func (m *BotMiddleware) verifyBot(ip string, userAgent string) bool {
 		return false
 	}
 
-	botDomainPattern, _ := regexp.Compile(`(\.|^)(yandex\.(ru|net|com)|google(usercontent|bot)?\.com)\.$`)
+	botDomainPattern, _ := regexp.Compile(`(\.|^)(yandex\.(ru|net|com)|(google(usercontent|bot)?|search\.msn)\.com)\.$`)
 
 	for _, hostname := range hostnames {
 		match := botDomainPattern.MatchString(hostname)
