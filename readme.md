@@ -69,7 +69,7 @@ http:
       plugin:
         botsTo: "bots.example.com"      # host to redirect bots requests
         othersTo: "others.example.com"  # host to redirect others requests
-        botsList:                       # allows only 'Google' and 'Yandex'
+        botsList:                       # allows only 'Google', 'Yandex' and 'Bing'
           - Google
           - Yandex
         permanent: false                # if 'true' - redirect code = 301, 'false' - 302. Default: false
