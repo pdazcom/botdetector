@@ -84,7 +84,7 @@ func (m *BotMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 func (m *BotMiddleware) isSearchBot(userAgent string) bool {
 	botPatterns := map[string]string{
-		"Google": `(Google-?(bot|Other|InspectionTool|Safety|Producer|Read-Aloud|Site-Verification)|(Storebot|APIs|AdsBot|Mediapartners|FeedFetcher)-Google)`,
+		"Google": `(Google-?(bot|Other|InspectionTool|Safety|Producer|Read-Aloud|Site-Verification)?|(Storebot|APIs|AdsBot|Mediapartners|FeedFetcher)-Google)`,
 		"Yandex": `(Yandex|Ya)([a-zA-Z]*)(\/\d\.\d{1,2})?; (.*;\s)?\+http:\/\/yandex\.com\/bots`,
 		"Bing": `bingbot`,
 	}

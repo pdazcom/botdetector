@@ -49,6 +49,7 @@ func TestIsSearchBot(t *testing.T) {
 		expected  bool
 	}{
 		{"Googlebot", true},
+		{"Google", true},
 		{"Mozilla/5.0", false},
 		{"YandexBot/3.0; +http://yandex.com/bots", true},
 		{"Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0", true},
