@@ -9,8 +9,9 @@ import (
 	"regexp"
 	"strings"
     "fmt"
-    "os"
     "encoding/json"
+    "sync"
+    "time"
 )
 
 // DNSResolver is an interface for DNS lookups
@@ -39,14 +40,13 @@ type Config struct {
 	ExcludeStatic       bool            `json:"excludeStatic,omitempty"`
 	StaticExtensions    []string        `json:"staticExtensions,omitempty"`
 	GoogleByIP          bool            `json:"googleByIP,omitempty"`
-    GoogleCIDRFile      string          `json:"googleCIDRFile,omitempty"`
+    IncludeGoogleIPs    []string        `json:"includeGoogleIPs,omitempty"`
 }
 
 func CreateConfig() *Config {
 	return &Config{
 	    BotTag: "true",
 	    StaticExtensions: []string{".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2", ".ttf", ".ico"},
-	    GoogleCIDRFile: "google_cidr.json",
 	}
 }
 
@@ -61,7 +61,9 @@ type BotMiddleware struct {
     staticExtensions    []string
     googleByIP          bool
     googleCIDR          []*net.IPNet
+    includeGoogleIPs    []*net.IPNet
 	dnsResolver         DNSResolver
+    mu                  sync.RWMutex
 }
 
 func New(ctx context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
@@ -79,10 +81,21 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 	}
 
 	if middleware.googleByIP {
-		err := middleware.loadGoogleCIDR(config.GoogleCIDRFile)
+		err := middleware.loadGoogleCIDR()
 		if err != nil {
 			return nil, fmt.Errorf("failed to load Google CIDR list: %v", err)
 		}
+
+        for _, includeIP := range config.IncludeGoogleIPs {
+            _, cidr, err := net.ParseCIDR(includeIP)
+            if err != nil {
+                continue
+            }
+            middleware.includeGoogleIPs = append(middleware.includeGoogleIPs, cidr)
+        }
+
+        // start periodic loading of CIDR from URL
+        go middleware.periodicLoad(1 * time.Hour)
 	}
 
     return middleware, nil
@@ -143,36 +156,73 @@ func (m *BotMiddleware) isRefererSameHost(req *http.Request) bool {
 	return refererHost == requestHost
 }
 
-func (m *BotMiddleware) loadGoogleCIDR(filePath string) error {
-	file, err := os.Open(filePath)
+func (m *BotMiddleware) loadGoogleCIDR() error {
+	resp, err := http.Get("https://www.gstatic.com/ipranges/goog.json")
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer resp.Body.Close()
 
-	var cidrList []string
-	if err := json.NewDecoder(file).Decode(&cidrList); err != nil {
+	var data struct {
+		Prefixes []struct {
+			IPPrefix string `json:"ipv4Prefix"`
+			IP6Prefix string `json:"ipv6Prefix"`
+		} `json:"prefixes"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return err
 	}
 
-	for _, cidrStr := range cidrList {
-		_, cidr, err := net.ParseCIDR(cidrStr)
-		if err != nil {
-			continue
+	var parsedCIDR []*net.IPNet
+	for _, prefix := range data.Prefixes {
+		if prefix.IPPrefix != "" {
+			_, cidr, err := net.ParseCIDR(prefix.IPPrefix)
+			if err != nil {
+				continue
+			}
+			parsedCIDR = append(parsedCIDR, cidr)
 		}
-		m.googleCIDR = append(m.googleCIDR, cidr)
+		if prefix.IP6Prefix != "" {
+			_, cidr, err := net.ParseCIDR(prefix.IP6Prefix)
+			if err != nil {
+				continue
+			}
+			parsedCIDR = append(parsedCIDR, cidr)
+		}
 	}
+
+	// Обновляем список CIDR безопасным образом
+	m.mu.Lock()
+	m.googleCIDR = parsedCIDR
+	m.mu.Unlock()
 
 	return nil
 }
 
+func (m *BotMiddleware) periodicLoad(interval time.Duration) {
+	for {
+        m.loadGoogleCIDR()
+		time.Sleep(interval)
+	}
+}
+
 func (m *BotMiddleware) isGoogleBotByIP(ip string) bool {
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+
     ipNet := net.ParseIP(ip)
 	for _, cidr := range m.googleCIDR {
 		if cidr.Contains(ipNet) {
 			return true
 		}
 	}
+
+    for _, cidr := range m.includeGoogleIPs {
+        if cidr.Contains(ipNet) {
+            return true
+        }
+    }
+
 	return false
 }
 

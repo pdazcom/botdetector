@@ -1,11 +1,14 @@
 package botdetector
 
 import (
+    "context"
 	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"bytes"
+	"io"
 )
 
 type MockDNSResolver struct{}
@@ -41,6 +44,19 @@ func (r *MockDNSResolver) LookupIP(hostname string) ([]net.IP, error) {
 	}
 
 	return nil, errors.New("unknown host")
+}
+
+// Мок-обработчик для имитации ответа от HTTP-сервера
+type MockTransport struct {
+	Response *http.Response
+	Err      error
+}
+
+func (m *MockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if m.Err != nil {
+		return nil, m.Err
+	}
+	return m.Response, nil
 }
 
 func TestIsSearchBot(t *testing.T) {
@@ -308,44 +324,71 @@ func TestServeHTTP_WithStaticFileAndExcludeStaticDisabled(t *testing.T) {
 }
 
 func TestGoogleBotByIP(t *testing.T) {
-	middleware := &BotMiddleware{
-		botsTo:    "bots.com",
-		othersTo:  "others.com",
-		googleByIP: true,
-		botTag: "true",
+
+    // create a mock response
+    mockResponse := `{
+        "prefixes": [
+            {"ipv4Prefix": "8.8.8.0/24"},
+            {"ipv4Prefix": "64.233.160.0/19"},
+            {"ipv4Prefix": "66.249.80.0/20"},
+            {"ipv4Prefix": "72.14.192.0/18"},
+            {"ipv4Prefix": "209.85.128.0/17"},
+            {"ipv6Prefix": "2001:4860:4860::8888/32"}
+        ]
+    }`
+
+    // mocking the HTTP client
+    mockTransport := &MockTransport{
+        Response: &http.Response{
+            StatusCode: 200,
+            Header:     make(http.Header),
+            Body:       http.NoBody,
+        },
+    }
+    mockTransport.Response.Body = io.NopCloser(bytes.NewReader([]byte(mockResponse)))
+
+    // setting up the loading function using a mock conveyor
+    oldTransport := http.DefaultTransport
+    http.DefaultTransport = mockTransport
+    defer func() { http.DefaultTransport = oldTransport }() // restore the original vehicle after the test
+
+    middleware, _ := New(
+        context.Background(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+        &Config{
+            BotsTo:    "bots.com",
+            OthersTo:  "others.com",
+            GoogleByIP: true,
+            BotTag: "true",
+            IncludeGoogleIPs: []string{"172.18.0.0/24", "192.168.1.1/32"},
+        },
+        "botdetector",
+    )
+
+    tests := []struct {
+		ip         string
+		expectedLocation  string
+		expectedStatus     int
+	}{
+		{"64.233.160.1:12345", "http://bots.com", http.StatusFound}, // in google range
+		{"1.1.1.1:12345", "http://others.com", http.StatusFound}, // out of google range
+		{"172.18.0.1:12345", "http://bots.com", http.StatusFound}, // in include google range
+		{"192.168.1.1:12346", "http://bots.com", http.StatusFound}, // in include google range
 	}
 
-	// load CIDR ranges from JSON
-	err := middleware.loadGoogleCIDR("test_cidr.json")
-	if err != nil {
-		t.Fatalf("Failed to load Google CIDR list: %v", err)
-	}
+    for _, test := range tests {
 
-	// create a request with an IP from the Google range
-	req := httptest.NewRequest("GET", "http://localhost/", nil)
-	req.RemoteAddr = "64.233.160.1:12345" // IP в диапазоне Google
+        req := httptest.NewRequest("GET", "http://localhost", nil)
+        req.RemoteAddr = test.ip
 
-	recorder := httptest.NewRecorder()
-	middleware.ServeHTTP(recorder, req)
+        recorder := httptest.NewRecorder()
+        middleware.ServeHTTP(recorder, req)
 
-	// check that the request was redirected to botsTo
-	if location := recorder.Header().Get("Location"); location != "http://bots.com/" {
-		t.Errorf("Expected redirect to http://bots.com/, got %v", location)
-	}
-	if status := recorder.Code; status != http.StatusFound {
-		t.Errorf("Expected status 302 Found, got %v", status)
-	}
-
-    req2 := httptest.NewRequest("GET", "http://example.com", nil)
-	req2.RemoteAddr = "1.1.1.1:12345" // IP not in Google range
-
-	recorder2 := httptest.NewRecorder()
-	middleware.ServeHTTP(recorder2, req2)
-
-	if location := recorder2.Header().Get("Location"); location != "http://others.com" {
-		t.Errorf("Expected redirect to http://others.com, got %v", location)
-	}
-	if status := recorder2.Code; status != http.StatusFound {
-		t.Errorf("Expected status 302 Found, got %v", status)
-	}
+        // check that the request was redirected to expected location
+        if location := recorder.Header().Get("Location"); location != test.expectedLocation {
+            t.Errorf("Expected redirect to http://bots.com/, got %v", location)
+        }
+        if status := recorder.Code; status != test.expectedStatus {
+            t.Errorf("Expected status 302 Found, got %v", status)
+        }
+    }
 }
