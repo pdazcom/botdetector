@@ -26,7 +26,7 @@ experimental:
   plugins:
     botdetector:
       modulename = "github.com/pdazcom/botdetector"
-      version = "v0.3.0"
+      version = "v0.4.0"
 
 entryPoints:
   http:
@@ -44,6 +44,8 @@ This plugin supports these configuration (all of them optional):
 * `botsList`: list of search engine bots that need to be checked. Checks all if empty.
 * `permanent`: sets the redirect type: 'true' - redirect code = 301, 'false' - 302. Default: false.
 * `botTag`: header `X-SearchBot-Detected` value to mark search bots requests. Default: "true"
+* `googleByIP`: sets whether to detect the google bot by IP only, user-agent and rDNS are ignored. Default: "false"
+* `googleCIDRFile`: file with a list of CIDRs by which to check whether an IP belongs to Google (JSON array). Default: "google_cidr.json"
 
 **Note**: Leave `botsTo` and `othersTo` empty to only mark bot requests with the `X-SearchBot-Detected` header without redirects.
 

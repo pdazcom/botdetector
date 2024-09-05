@@ -306,3 +306,46 @@ func TestServeHTTP_WithStaticFileAndExcludeStaticDisabled(t *testing.T) {
 		t.Errorf("Expected status 302 Found, got %v", status)
 	}
 }
+
+func TestGoogleBotByIP(t *testing.T) {
+	middleware := &BotMiddleware{
+		botsTo:    "bots.com",
+		othersTo:  "others.com",
+		googleByIP: true,
+		botTag: "true",
+	}
+
+	// load CIDR ranges from JSON
+	err := middleware.loadGoogleCIDR("test_cidr.json")
+	if err != nil {
+		t.Fatalf("Failed to load Google CIDR list: %v", err)
+	}
+
+	// create a request with an IP from the Google range
+	req := httptest.NewRequest("GET", "http://localhost/", nil)
+	req.RemoteAddr = "64.233.160.1:12345" // IP в диапазоне Google
+
+	recorder := httptest.NewRecorder()
+	middleware.ServeHTTP(recorder, req)
+
+	// check that the request was redirected to botsTo
+	if location := recorder.Header().Get("Location"); location != "http://bots.com/" {
+		t.Errorf("Expected redirect to http://bots.com/, got %v", location)
+	}
+	if status := recorder.Code; status != http.StatusFound {
+		t.Errorf("Expected status 302 Found, got %v", status)
+	}
+
+    req2 := httptest.NewRequest("GET", "http://example.com", nil)
+	req2.RemoteAddr = "1.1.1.1:12345" // IP not in Google range
+
+	recorder2 := httptest.NewRecorder()
+	middleware.ServeHTTP(recorder2, req2)
+
+	if location := recorder2.Header().Get("Location"); location != "http://others.com" {
+		t.Errorf("Expected redirect to http://others.com, got %v", location)
+	}
+	if status := recorder2.Code; status != http.StatusFound {
+		t.Errorf("Expected status 302 Found, got %v", status)
+	}
+}

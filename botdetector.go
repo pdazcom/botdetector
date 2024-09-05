@@ -8,6 +8,9 @@ import (
 	"path"
 	"regexp"
 	"strings"
+    "fmt"
+    "os"
+    "encoding/json"
 )
 
 // DNSResolver is an interface for DNS lookups
@@ -28,19 +31,22 @@ func (r *DefaultDNSResolver) LookupIP(host string) ([]net.IP, error) {
 }
 
 type Config struct {
-	BotsTo              string   `json:"botsTo,omitempty"`
-	OthersTo            string   `json:"othersTo,omitempty"`
-	BotsList            []string `json:"botsList,omitempty"`
-	Permanent           bool     `json:"permanent,omitempty"`
-	BotTag              string   `json:"botTag,omitempty"`
-	ExcludeStatic       bool     `json:"excludeStatic,omitempty"`
-	StaticExtensions    []string `json:"staticExtensions,omitempty"`
+	BotsTo              string          `json:"botsTo,omitempty"`
+	OthersTo            string          `json:"othersTo,omitempty"`
+	BotsList            []string        `json:"botsList,omitempty"`
+	Permanent           bool            `json:"permanent,omitempty"`
+	BotTag              string          `json:"botTag,omitempty"`
+	ExcludeStatic       bool            `json:"excludeStatic,omitempty"`
+	StaticExtensions    []string        `json:"staticExtensions,omitempty"`
+	GoogleByIP          bool            `json:"googleByIP,omitempty"`
+    GoogleCIDRFile      string          `json:"googleCIDRFile,omitempty"`
 }
 
 func CreateConfig() *Config {
 	return &Config{
 	    BotTag: "true",
-	    StaticExtensions: []string{".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2", ".ttf"},
+	    StaticExtensions: []string{".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2", ".ttf", ".ico"},
+	    GoogleCIDRFile: "google_cidr.json",
 	}
 }
 
@@ -53,11 +59,13 @@ type BotMiddleware struct {
 	botTag              string
 	excludeStatic       bool
     staticExtensions    []string
+    googleByIP          bool
+    googleCIDR          []*net.IPNet
 	dnsResolver         DNSResolver
 }
 
 func New(ctx context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
-	return &BotMiddleware{
+	middleware := &BotMiddleware{
 		next:               next,
 		botsTo:             config.BotsTo,
 		othersTo:           config.OthersTo,
@@ -66,13 +74,23 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		botTag:             config.BotTag,
 		excludeStatic:      config.ExcludeStatic,
         staticExtensions:   config.StaticExtensions,
+        googleByIP:         config.GoogleByIP,
 		dnsResolver:        &DefaultDNSResolver{},
-	}, nil
+	}
+
+	if middleware.googleByIP {
+		err := middleware.loadGoogleCIDR(config.GoogleCIDRFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load Google CIDR list: %v", err)
+		}
+	}
+
+    return middleware, nil
 }
 
 func (m *BotMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
-    // If the files are static and need to be excluded, check
+    // if the files are static and need to be excluded, check
     if m.excludeStatic && m.isStaticFile(req.URL.Path) && m.isRefererSameHost(req) {
 		if m.next != nil {
             m.next.ServeHTTP(rw, req)
@@ -80,25 +98,24 @@ func (m *BotMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
         return
 	}
 
-
-
     if req.Header.Get("X-SearchBot-Detected") == m.botTag {
+        m.redirect(rw, req, m.botsTo)
+        return
+    }
 
-        println("SearchBot-Detected")
-        println(m.botTag)
+    // checking against the Google IP list (always enabled if googleByIP is available)
+    ip := getIP(req)
+    if m.googleByIP && m.isGoogleBotByIP(ip) {
         m.redirect(rw, req, m.botsTo)
         return
     }
 
 	userAgent := req.Header.Get("User-Agent")
 
-	if m.isSearchBot(userAgent) {
-		ip := getIP(req)
-		if m.verifyBot(ip, userAgent) {
-		    req.Header.Set("X-SearchBot-Detected", m.botTag)
-			m.redirect(rw, req, m.botsTo)
-			return
-		}
+	if m.isSearchBot(userAgent) && m.verifyBot(ip, userAgent) {
+        req.Header.Set("X-SearchBot-Detected", m.botTag)
+        m.redirect(rw, req, m.botsTo)
+        return
 	}
 
 	m.redirect(rw, req, m.othersTo)
@@ -124,6 +141,39 @@ func (m *BotMiddleware) isRefererSameHost(req *http.Request) bool {
 	requestHost := req.Host
 
 	return refererHost == requestHost
+}
+
+func (m *BotMiddleware) loadGoogleCIDR(filePath string) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	var cidrList []string
+	if err := json.NewDecoder(file).Decode(&cidrList); err != nil {
+		return err
+	}
+
+	for _, cidrStr := range cidrList {
+		_, cidr, err := net.ParseCIDR(cidrStr)
+		if err != nil {
+			continue
+		}
+		m.googleCIDR = append(m.googleCIDR, cidr)
+	}
+
+	return nil
+}
+
+func (m *BotMiddleware) isGoogleBotByIP(ip string) bool {
+    ipNet := net.ParseIP(ip)
+	for _, cidr := range m.googleCIDR {
+		if cidr.Contains(ipNet) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *BotMiddleware) isSearchBot(userAgent string) bool {
