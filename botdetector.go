@@ -4,6 +4,8 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"net/url"
+	"path"
 	"regexp"
 	"strings"
 )
@@ -26,44 +28,64 @@ func (r *DefaultDNSResolver) LookupIP(host string) ([]net.IP, error) {
 }
 
 type Config struct {
-	BotsTo    string   `json:"botsTo,omitempty"`
-	OthersTo  string   `json:"othersTo,omitempty"`
-	BotsList  []string `json:"botsList,omitempty"`
-	Permanent bool     `json:"permanent,omitempty"`
-	BotTag    string   `json:"botTag,omitempty"`
+	BotsTo              string   `json:"botsTo,omitempty"`
+	OthersTo            string   `json:"othersTo,omitempty"`
+	BotsList            []string `json:"botsList,omitempty"`
+	Permanent           bool     `json:"permanent,omitempty"`
+	BotTag              string   `json:"botTag,omitempty"`
+	ExcludeStatic       bool     `json:"excludeStatic,omitempty"`
+	StaticExtensions    []string `json:"staticExtensions,omitempty"`
 }
 
 func CreateConfig() *Config {
 	return &Config{
 	    BotTag: "true",
+	    StaticExtensions: []string{".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2", ".ttf"},
 	}
 }
 
 type BotMiddleware struct {
-	next        http.Handler
-	botsTo      string
-	othersTo    string
-	botsList    []string
-	permanent   bool
-	botTag      string
-	dnsResolver DNSResolver
+	next                http.Handler
+	botsTo              string
+	othersTo            string
+	botsList            []string
+	permanent           bool
+	botTag              string
+	excludeStatic       bool
+    staticExtensions    []string
+	dnsResolver         DNSResolver
 }
 
 func New(ctx context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
 	return &BotMiddleware{
-		next:        next,
-		botsTo:      config.BotsTo,
-		othersTo:    config.OthersTo,
-		botsList:    config.BotsList,
-		permanent:   config.Permanent,
-		botTag:      config.BotTag,
-		dnsResolver: &DefaultDNSResolver{},
+		next:               next,
+		botsTo:             config.BotsTo,
+		othersTo:           config.OthersTo,
+		botsList:           config.BotsList,
+		permanent:          config.Permanent,
+		botTag:             config.BotTag,
+		excludeStatic:      config.ExcludeStatic,
+        staticExtensions:   config.StaticExtensions,
+		dnsResolver:        &DefaultDNSResolver{},
 	}, nil
 }
 
 func (m *BotMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
+    // If the files are static and need to be excluded, check
+    if m.excludeStatic && m.isStaticFile(req.URL.Path) && m.isRefererSameHost(req) {
+		if m.next != nil {
+            m.next.ServeHTTP(rw, req)
+        }
+        return
+	}
+
+
+
     if req.Header.Get("X-SearchBot-Detected") == m.botTag {
+
+        println("SearchBot-Detected")
+        println(m.botTag)
         m.redirect(rw, req, m.botsTo)
         return
     }
@@ -80,6 +102,28 @@ func (m *BotMiddleware) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	m.redirect(rw, req, m.othersTo)
+}
+
+func (m *BotMiddleware) isStaticFile(urlPath string) bool {
+	ext := strings.ToLower(path.Ext(urlPath))
+	for _, staticExt := range m.staticExtensions {
+		if ext == staticExt {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *BotMiddleware) isRefererSameHost(req *http.Request) bool {
+	referer := req.Header.Get("Referer")
+	if referer == "" {
+		return false
+	}
+
+	refererHost := getHostFromURL(referer)
+	requestHost := req.Host
+
+	return refererHost == requestHost
 }
 
 func (m *BotMiddleware) isSearchBot(userAgent string) bool {
@@ -185,4 +229,12 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+func getHostFromURL(URL string) string {
+	parsedURL, err := url.Parse(URL)
+	if err != nil {
+		return ""
+	}
+	return parsedURL.Host
 }

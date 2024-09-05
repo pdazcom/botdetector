@@ -48,6 +48,7 @@ func TestIsSearchBot(t *testing.T) {
 		userAgent string
 		expected  bool
 	}{
+	    {"", false},
 		{"Googlebot", true},
 		{"Google", true},
 		{"Mozilla/5.0", false},
@@ -178,5 +179,130 @@ func TestServeHTTP(t *testing.T) {
 				t.Errorf("ServeHTTP() header = %v; want %v", header, test.botTag)
 			}
 		}
+	}
+}
+
+func TestServeHTTP_WithStaticFileAndRefererSameHost(t *testing.T) {
+	middleware := &BotMiddleware{
+		botsTo:          "bots.com",
+		othersTo:        "others.com",
+		botTag:          "true",
+		excludeStatic:   true,
+		staticExtensions: []string{".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2", ".ttf"},
+		next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+	}
+
+	// Static file with referrer matching host
+	req := httptest.NewRequest("GET", "http://localhost/style.css", nil)
+	req.Header.Set("Referer", "http://localhost/")
+	recorder := httptest.NewRecorder()
+
+	middleware.ServeHTTP(recorder, req)
+
+	// Checking that the static file is not redirected
+	if status := recorder.Code; status != http.StatusOK {
+		t.Errorf("Expected status 200 OK for static file, got %v", status)
+	}
+}
+
+func TestServeHTTP_WithStaticFileAndRefererDifferentHost(t *testing.T) {
+	middleware := &BotMiddleware{
+		botsTo:          "bots.com",
+		othersTo:        "others.com",
+		excludeStatic:   true,
+		botTag:          "true",
+		next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+		staticExtensions: []string{".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2", ".ttf"},
+	}
+
+	// Static file with referrer from another host
+	req := httptest.NewRequest("GET", "http://localhost/style.css", nil)
+	req.Header.Set("Referer", "http://otherhost.com/")
+	recorder := httptest.NewRecorder()
+
+	middleware.ServeHTTP(recorder, req)
+
+	// Checking that the request is redirected to othersTo
+	if location := recorder.Header().Get("Location"); location != "http://others.com/style.css" {
+		t.Errorf("Expected redirect to http://others.com/style.css, got %v", location)
+	}
+	if status := recorder.Code; status != http.StatusFound {
+		t.Errorf("Expected status 302 Found, got %v", status)
+	}
+}
+
+func TestServeHTTP_WithNonStaticFile(t *testing.T) {
+	middleware := &BotMiddleware{
+		botsTo:          "bots.com",
+		othersTo:        "others.com",
+		excludeStatic:   true,
+		staticExtensions: []string{".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2", ".ttf"},
+		botTag:          "true",
+        next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+	}
+
+	// Regular file (not static)
+	req := httptest.NewRequest("GET", "http://localhost/index.html", nil)
+	recorder := httptest.NewRecorder()
+
+	middleware.ServeHTTP(recorder, req)
+
+	// We check that the request is redirected to othersTo (since the bot is not defined)
+	if location := recorder.Header().Get("Location"); location != "http://others.com/index.html" {
+		t.Errorf("Expected redirect to http://others.com/index.html, got %v", location)
+	}
+	if status := recorder.Code; status != http.StatusFound {
+		t.Errorf("Expected status 302 Found, got %v", status)
+	}
+}
+
+func TestServeHTTP_StaticFileWithoutReferer(t *testing.T) {
+	middleware := &BotMiddleware{
+		botsTo:          "bots.com",
+		othersTo:        "others.com",
+		excludeStatic:   true,
+		staticExtensions: []string{".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2", ".ttf"},
+		botTag:          "true",
+        next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+	}
+
+	// Static file without referrer
+	req := httptest.NewRequest("GET", "http://localhost/style.css", nil)
+	recorder := httptest.NewRecorder()
+
+	middleware.ServeHTTP(recorder, req)
+
+	// Checking that the request is redirected to othersTo
+	if location := recorder.Header().Get("Location"); location != "http://others.com/style.css" {
+		t.Errorf("Expected redirect to http://others.com/style.css, got %v", location)
+	}
+	if status := recorder.Code; status != http.StatusFound {
+		t.Errorf("Expected status 302 Found, got %v", status)
+	}
+}
+
+func TestServeHTTP_WithStaticFileAndExcludeStaticDisabled(t *testing.T) {
+	middleware := &BotMiddleware{
+		botsTo:          "bots.com",
+		othersTo:        "others.com",
+		excludeStatic:   false, // Отключено исключение статики
+		staticExtensions: []string{".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".woff", ".woff2", ".ttf"},
+		botTag:          "true",
+        next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+	}
+
+	// Static file with referrer matching host
+	req := httptest.NewRequest("GET", "http://localhost/style.css", nil)
+	req.Header.Set("Referer", "http://localhost/")
+	recorder := httptest.NewRecorder()
+
+	middleware.ServeHTTP(recorder, req)
+
+	// Checking that the request is redirected to othersTo since excludeStatic is disabled
+	if location := recorder.Header().Get("Location"); location != "http://others.com/style.css" {
+		t.Errorf("Expected redirect to http://others.com/style.css, got %v", location)
+	}
+	if status := recorder.Code; status != http.StatusFound {
+		t.Errorf("Expected status 302 Found, got %v", status)
 	}
 }

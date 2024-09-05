@@ -26,7 +26,7 @@ experimental:
   plugins:
     botdetector:
       modulename = "github.com/pdazcom/botdetector"
-      version = "v0.2.2"
+      version = "v0.3.0"
 
 entryPoints:
   http:
